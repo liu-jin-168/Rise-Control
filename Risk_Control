@@ -1,0 +1,76 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+
+df=pd.read_csv('train.csv')   #读取数据
+print(df.isnull().sum())       #查找缺失值
+print(df.describe())
+print(df['SeriousDlqin2yrs'].value_counts())
+
+df['MonthlyIncome']=df['MonthlyIncome'].fillna(df['MonthlyIncome'].median())
+df['NumberOfDependents']=df['NumberOfDependents'].fillna(0)
+print(df.isnull().sum())
+
+print('最小年龄：',df['age'].min())
+df=df[df['age']>=18]
+print("逾期次数最大值:", df[['NumberOfTime30-59DaysPastDueNotWorse',
+                          'NumberOfTime60-89DaysPastDueNotWorse',
+                          'NumberOfTimes90DaysLate']].max())
+
+print("信用卡使用率最大值:", df['RevolvingUtilizationOfUnsecuredLines'].max())
+
+df = df[df['NumberOfTime30-59DaysPastDueNotWorse'] <= 20]
+df = df[df['NumberOfTime60-89DaysPastDueNotWorse'] <= 20]
+df = df[df['NumberOfTimes90DaysLate'] <= 20]
+print(df['RevolvingUtilizationOfUnsecuredLines'].quantile(0.99))
+df = df[df['RevolvingUtilizationOfUnsecuredLines']<1.5]
+
+X = df.drop('SeriousDlqin2yrs',axis=1)
+y = df['SeriousDlqin2yrs']
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+model = LogisticRegression()
+model.fit(X_scaled,y)
+
+prob = model.predict_proba(X_scaled)[:,1]
+auc = roc_auc_score(y,prob)
+print('auc:',auc)
+fpr,tpr,thresholds = roc_curve(y,prob)
+ks = max(tpr-fpr)
+print('ks:',ks)
+
+prob = np.clip(prob,0.0001,0.9999)
+factor = 50/np.log(2)
+offset = 600
+score = offset-factor*np.log(prob/(1-prob))
+result = pd.DataFrame({
+    'score':score,
+    'actual':y
+})
+print(result.groupby('actual')['score'].mean())
+print(result['score'].describe())
+
+scores = cross_val_score(model, X_scaled, y, cv=5, scoring='roc_auc')
+print('五折交叉检验AUCA：',scores)
+print('平均AUC：',scores.mean())
+print('标准差：',scores.std())
+
+plt.rcParams['font.sans-serif']=['SimHei']
+plt.rcParams['axes.unicode_minus']=False
+
+good_score = result[result['actual']==0]['score']
+bad_score = result[result['actual']==1]['score']
+
+plt.hist(good_score,bins=50,alpha=0.5,label='好人',color='red')
+plt.hist(bad_score,bins=50,alpha=0.5,label='坏人',color='blue')
+plt.xlabel('评分卡分数')
+plt.ylabel('人数')
+plt.title('好人VS坏人 分数分布')
+plt.legend()
+plt.show()
