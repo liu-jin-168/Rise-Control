@@ -74,3 +74,50 @@ plt.ylabel('人数')
 plt.title('好人VS坏人 分数分布')
 plt.legend()
 plt.show()
+import pandas as pd
+import numpy as np
+df['age_bin']=pd.cut(df['age'],bins=[18,25,35,45,55,100],labels=['18-25','26-35','36-45','46-55','>55'])
+result=df.groupby('age_bin')['SeriousDlqin2yrs'].agg(['count','sum'])
+result.columns= ['总人数','坏人数']
+result['好人数'] = result['总人数']-result['坏人数']
+print(result)
+
+import numpy as np
+
+# 1. 算总的好人数、坏人数
+total_good = result['好人数'].sum()
+total_bad = result['坏人数'].sum()
+
+# 2. 算每个箱的好人占比、坏人占比
+result['好人占比'] = result['好人数'] / total_good
+result['坏人占比'] = result['坏人数'] / total_bad
+
+# 3. 算 WOE
+result['WOE'] = np.log(result['好人占比'] / result['坏人占比'])
+
+# 4. 算 IV
+result['IV'] = (result['好人占比'] - result['坏人占比']) * result['WOE']
+IV_total = result['IV'].sum()
+
+print(result)
+print("年龄的 IV:", IV_total)
+
+df['age_woe'] = df['age_bin'].map(result['WOE'])
+print(df[['age','age_bin','age_woe']].head(10))
+
+data = pd.concat([X,y],axis=1)
+data = data.dropna()
+X=data.drop('SeriousDlqin2yrs',axis=1)
+y = data['SeriousDlqin2yrs']
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+model = LogisticRegression(max_iter=1000)
+model.fit(X_scaled,y)
+
+prob_woe = model.predict_proba(X_scaled)[:,1]
+auc_woe = roc_auc_score(y,prob_woe)
+print('woe替换后的auc:',auc_woe)
+
+fpr,tpr,thresholds = roc_curve(y,prob_woe)
+ks_woe = max(tpr-fpr)
+print('woe替换后的ks:',ks_woe)
